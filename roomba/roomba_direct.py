@@ -8,23 +8,26 @@
 
 __version__ = "2.0c"
 
-import logging
-from logging.handlers import RotatingFileHandler
-import sys
-from roomba import Roomba
-from password  import Password
-from ast import literal_eval
 import argparse
+import logging
 import os
-import time
+import sys
 import textwrap
+import time
+from ast import literal_eval
+from logging.handlers import RotatingFileHandler
+
+from password import Password
+
+from roomba import Roomba
+
 # Import trickery
 global HAVE_CV2
 global HAVE_MQTT
 global HAVE_PIL
 HAVE_CV2 = HAVE_MQTT = HAVE_PIL = False
-import configparser
 import asyncio
+import configparser
 
 try:
     import paho.mqtt.client as mqtt
@@ -44,6 +47,7 @@ except ImportError:
     print("PIL module not found, maps are disabled")
     
 import asyncio
+
 if sys.version_info < (3, 7):
     asyncio.get_running_loop = asyncio.get_event_loop
 
@@ -369,7 +373,7 @@ def main():
         log.info("CV Version: %s" % cv2.__version__)
 
     if HAVE_PIL:
-        import PIL #bit of a kludge, just to get the version number
+        import PIL  # bit of a kludge, just to get the version number
         log.info("PIL Version: %s" % PIL.__version__)
 
     log.debug("-- DEBUG Mode ON -")
@@ -379,7 +383,7 @@ def main():
     group = None
     options = vars(arg) #use args as dict
 
-    if arg.blid is None or arg.password is None:
+    if arg.blid is None and arg.password is None:
         get_passwd = Password(arg.roomba_ip,file=arg.configfile)
         roombas = get_passwd.get_roombas()
     else:

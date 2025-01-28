@@ -10,15 +10,18 @@ Nick Waterton 5th May 2017: V 1.0: Initial Release
 Nick Waterton 22nd Dec 2020: V2.0: Updated for i and S Roomba versions, update to minimum python version 3.6
 '''
 
-from pprint import pformat
+import configparser
 import json
 import logging
+import random
 import socket
 import ssl
+import string
 import sys
 import time
 from ast import literal_eval
-import configparser
+from pprint import pformat
+
 
 class Password(object):
     '''
@@ -51,13 +54,14 @@ class Password(object):
         #read config file
         Config = configparser.ConfigParser()
         roombas = {}
-        try:
-            Config.read(self.file)
-            self.log.info("reading/writing info from config file {}".format(self.file))
-            roombas = {s:{k:literal_eval(v) if k in self.config_dicts else v for k, v in Config.items(s)} for s in Config.sections()}   
-            #self.log.info('data read from {}: {}'.format(self.file, pformat(roombas)))
-        except Exception as e:
-            self.log.exception(e)
+        if self.file is not None:
+            try:
+                Config.read(self.file)
+                self.log.info("reading/writing info from config file {}".format(self.file))
+                roombas = {s:{k:literal_eval(v) if k in self.config_dicts else v for k, v in Config.items(s)} for s in Config.sections()}
+                #self.log.info('data read from {}: {}'.format(self.file, pformat(roombas)))
+            except Exception as e:
+                self.log.exception(e)
         return roombas
 
     def receive_udp(self):
@@ -147,24 +151,22 @@ class Password(object):
                               "flash WIFI light.".format(robotname, addr))
             else:
                 self.log.info("Configuring robot ({}) at IP {} from cloud data, blid: {}, password: {}".format(robotname, addr, blid, password))
-            if sys.stdout.isatty():
-                char = input("Press <Enter> to continue...\r\ns<Enter> to skip configuring this robot: ")
-                if char == 's':
-                    self.log.info('Skipping')
-                    continue
+            char = input("Press <Enter> to continue...\r\ns<Enter> to skip configuring this robot: ")
+            if char == 's':
+                self.log.info('Skipping')
+                continue
 
             #self.log.info("Received: %s"  % json.dumps(parsedMsg, indent=2))
 
             if password is None:
                 self.log.info("Roomba ({}) IP address is: {}".format(robotname, addr))
-                data = self.get_password_from_roomba(addr)
+                password = self.get_password_from_roomba(addr)
                 
-                if len(data) <= 7:
+                if password is None:
                     self.log.error( 'Error getting password for robot {} at ip{}, received {} bytes. '
                                     'Follow the instructions and try again.'.format(robotname, addr, len(data)))
                     continue
-                # Convert password to str
-                password = str(data[7:].decode().rstrip('\x00')) #for i7 - has null termination
+
             self.log.info("blid is: {}".format(blid))
             self.log.info('Password=> {} <= Yes, all this string.'.format(password))
             self.log.info('Use these credentials in roomba.py')
@@ -191,44 +193,108 @@ class Password(object):
         sock.settimeout(10)
         
         #context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        context = ssl.SSLContext()
         #context.set_ciphers('DEFAULT@SECLEVEL=1:HIGH:!DH:!aNULL')
         wrappedSocket = context.wrap_socket(sock)
         
         try:
             wrappedSocket.connect((addr, 8883))
             self.log.debug('Connection Successful')
-            wrappedSocket.send(packet)
-            self.log.debug('Waiting for data')
-        
-            while len(data) < 37:
-                data_received = wrappedSocket.recv(1024)
-                data+= data_received
-                if len(data_received) == 0:
-                    self.log.info("socket closed")
-                    break
-                
-            wrappedSocket.close()
-            return data
-            
-        except socket.timeout as e:
-            self.log.error('Connection Timeout Error (for {}): {}'.format(addr, e))
-        except (ConnectionRefusedError, OSError) as e:
-            if e.errno == 111:      #errno.ECONNREFUSED
-                self.log.error('Unable to Connect to roomba at ip {}, make sure nothing else is connected (app?), '
-                               'as only one connection at a time is allowed'.format(addr))
-            elif e.errno == 113:    #errno.No Route to Host
-                self.log.error('Unable to contact roomba on ip {} is the ip correct?'.format(addr))
-            else:
-                self.log.error("Connection Error (for {}): {}".format(addr, e))
-        except Exception as e:
-            self.log.exception(e)
+            try:
+                wrappedSocket.send(packet)
+                self.log.debug('Waiting for data')
 
-        self.log.error('Unable to get password from roomba')
-        return data
-        
+                while len(data) < 37:
+                    data_received = wrappedSocket.recv(1024)
+                    data+= data_received
+                    if len(data_received) == 0:
+                        self.log.info("socket closed")
+                        break
+            finally:
+                wrappedSocket.close()
+        except Exception as e:
+            data = b''
+            if isinstance(e, socket.timeout):
+                self.log.error('Connection Timeout Error (for {}): {}'.format(addr, e))
+            elif isinstance(e, ConnectionRefusedError) or isinstance(e, OSError):
+                if e.errno == 111:      #errno.ECONNREFUSED
+                    self.log.error('Unable to Connect to roomba at ip {}, make sure nothing else is connected (app?), '
+                                   'as only one connection at a time is allowed'.format(addr))
+                elif e.errno == 113:    #errno.No Route to Host
+                    self.log.error('Unable to contact roomba on ip {} is the ip correct?'.format(addr))
+                else:
+                    self.log.error("Connection Error (for {}): {}".format(addr, e))
+            else:
+                self.log.exception(e)
+
+            self.log.error('Unable to get password from roomba')
+            return None
+
+        if len(data) <= 7:
+            return None
+
+        # Convert password to str
+        password = data[7:]
+        if b'\x00' in password:
+            password = password[:password.find(b'\x00')]  # for i7 - has null termination
+        return str(password.decode())
+
+    def generate_new_password(self):
+        alphabet = string.ascii_letters + string.digits
+        password = ":1:{}:".format(int(time.time()))
+        while len(password) < 30:
+            password += random.choice(alphabet)
+        return password
+
+
+    def set_new_password_on_roomba(self, addr, password=None):
+        if password is None:
+            password = self.generate_new_password()
+
+        magic = bytes.fromhex('f023efcc3b2900')
+        packet = magic + password.encode()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(10)
+        context = ssl.SSLContext()
+        wrappedSocket = context.wrap_socket(sock)
+
+        try:
+            wrappedSocket.connect((addr, 8883))
+            self.log.debug('Connection Successful')
+            try:
+                wrappedSocket.send(packet)
+                deadline = time.time() + 10
+                data = b''
+                while time.time() < deadline:
+                    wrappedSocket.settimeout(max(deadline - time.time(), 0))
+                    data += wrappedSocket.recv(1024)
+                    if magic in data:
+                        break
+                else:
+                    self.log.error('Authentication exchange failed')
+                    return None
+            finally:
+                wrappedSocket.close()
+        except Exception as e:
+            data = b''
+            if isinstance(e, socket.timeout):
+                self.log.error('Connection Timeout Error (for {}): {}'.format(addr, e))
+            elif isinstance(e, ConnectionRefusedError) or isinstance(e, OSError):
+                if e.errno == 111:      #errno.ECONNREFUSED
+                    self.log.error('Unable to Connect to roomba at ip {}, make sure nothing else is connected (app?), '
+                                   'as only one connection at a time is allowed'.format(addr))
+                elif e.errno == 113:    #errno.No Route to Host
+                    self.log.error('Unable to contact roomba on ip {} is the ip correct?'.format(addr))
+                else:
+                    self.log.error("Connection Error (for {}): {}".format(addr, e))
+            else:
+                self.log.exception(e)
+
+            self.log.error('Unable to get password from roomba')
+            return None
+
+        return password
+
     def save_config_file(self, roomba):
         Config = configparser.ConfigParser()
         if roomba:
@@ -294,4 +360,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

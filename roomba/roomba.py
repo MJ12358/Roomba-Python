@@ -41,22 +41,23 @@ Nick Waterton 19th Jun 2024 V 2.0.2: Python 3.10 compatibility fixes and TLS fix
 __version__ = "2.0.2"
 
 import asyncio
-from ast import literal_eval
-#from collections import OrderedDict, Mapping
-from collections.abc import Mapping
-from password import Password
+import configparser
 import datetime
+import io
 import json
-import math
 import logging
+import math
 import os
 import socket
 import ssl
 import sys
-import time
 import textwrap
-import io
-import configparser
+import time
+from ast import literal_eval
+#from collections import OrderedDict, Mapping
+from collections.abc import Mapping
+
+from password import Password
 
 # Import trickery
 global HAVE_CV2
@@ -78,7 +79,8 @@ except ImportError:
     print("CV or numpy module not found, falling back to PIL")
 
 try:
-    from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps, ImageColor
+    from PIL import (Image, ImageColor, ImageDraw, ImageFilter, ImageFont,
+                     ImageOps)
     HAVE_PIL = True
 except ImportError:
     print("PIL module not found, maps are disabled")
@@ -463,7 +465,7 @@ class Roomba(object):
         self.loop.create_task(self.process_command_q())
         self.update = self.loop.create_task(self.periodic_update())
 
-        if not all([self.address, self.blid, self.password]):
+        if not all(field is not None for field in [self.address, self.blid, self.password]):
             if not self.configure_roomba():
                 self.log.critical('Could not configure Roomba')
         else:
@@ -555,7 +557,7 @@ class Roomba(object):
         '''
         Connect to Roomba MQTT server
         '''
-        if not all([self.address, self.blid, self.password]):
+        if not all(field is None for field in [self.address, self.blid, self.password]):
             self.log.critical("Invalid address, blid, or password! All these "
                               "must be specified!")
             return False
