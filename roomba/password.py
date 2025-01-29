@@ -163,8 +163,8 @@ class Password(object):
                 password = self.get_password_from_roomba(addr)
                 
                 if password is None:
-                    self.log.error( 'Error getting password for robot {} at ip{}, received {} bytes. '
-                                    'Follow the instructions and try again.'.format(robotname, addr, len(data)))
+                    self.log.error( 'Error getting password for robot {} at ip{}.'
+                                    'Follow the instructions and try again.'.format(robotname, addr))
                     continue
 
             self.log.info("blid is: {}".format(blid))

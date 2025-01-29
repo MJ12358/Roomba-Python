@@ -6,6 +6,9 @@ import json
 import logging
 import time
 
+import pytz
+import tzlocal
+
 from roomba import Password, Roomba
 
 
@@ -34,7 +37,6 @@ class InitWifi(object):
 
         if self.timezone is None:
             try:
-                import tzlocal
                 self.timezone = str(tzlocal.get_localzone())
             except ImportError:
                 self.log.warning('tzlocal module not present, cannot determine system timezone')
@@ -42,7 +44,6 @@ class InitWifi(object):
 
         if self.country is None:
             try:
-                import pytz
                 for country_code in pytz.country_names:
                     try:
                         if self.timezone in pytz.country_timezones(country_code):
@@ -123,6 +124,7 @@ class InitWifi(object):
         async def async_provision(myroomba: Roomba):
             connected = await myroomba.async_connect()
             if not connected:
+                self.log.error("Failed to connect to Roomba")
                 return False
 
             try:
